@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>大衍筮法模拟器</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px;
+    font-family: "Songti SC", "SimSun", "Noto Serif CJK SC", serif;
+    background: #f6f1e7; color: #2b2118;
+    display: flex; justify-content: center;
+  }
+  .wrap { width: 100%; max-width: 860px; }
+  h1 { text-align: center; font-size: 26px; letter-spacing: 4px; margin: 0 0 6px; }
+  .sub { text-align: center; color: #8a7a63; font-size: 13px; margin-bottom: 22px; }
+  button {
+    display: block; margin: 0 auto 24px;
+    padding: 12px 36px; font-size: 16px; letter-spacing: 2px;
+    font-family: inherit; cursor: pointer;
+    color: #fff; background: #8b3a2e; border: none; border-radius: 4px;
+    transition: background .2s;
+  }
+  button:hover { background: #a8463a; }
+  button:disabled { background: #b9a99a; cursor: not-allowed; }
+  .step {
+    background: #fffdf8; border: 1px solid #e2d8c6; border-radius: 6px;
+    padding: 14px 18px; margin-bottom: 10px;
+    font-size: 14px; line-height: 1.9;
+  }
+  .step .title { font-weight: bold; color: #8b3a2e; }
+  .num { color: #1f5c8b; font-weight: bold; }
+  .result {
+    margin-top: 24px; background: #fffdf8; border: 1px solid #d9cbb4;
+    border-radius: 8px; padding: 22px 26px;
+  }
+  .result h2 { font-size: 18px; letter-spacing: 2px; margin: 0 0 14px; color: #8b3a2e; }
+  .gua-line { font-size: 15px; line-height: 2.1; }
+  .yao { letter-spacing: 2px; }
+  .dong { color: #b03a2e; font-weight: bold; }
+  .note { color: #8a7a63; font-size: 13px; margin-top: 12px; }
+  .analysis {
+    margin-top: 18px; padding: 16px 18px;
+    background: #f3ece0; border-left: 4px solid #8b3a2e; border-radius: 4px;
+    font-size: 14px; line-height: 2;
+  }
+  .analysis h3 { font-size: 15px; margin: 0 0 8px; color: #8b3a2e; letter-spacing: 1px; }
+  .tag { display: inline-block; padding: 1px 8px; margin: 0 2px; border-radius: 3px;
+         background: #e5d9c6; font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>大衍筮法模拟器</h1>
+  <div class="sub">五十策取四十九 · 三变一爻 · 十八变一卦</div>
+  <button id="run">起 卦</button>
+  <div id="steps"></div>
+  <div class="result" id="result" style="display:none"></div>
+</div>
+
+<script>
+// ========== 六十四卦名（上卦,下卦） ==========
+// 索引：1乾 2兑 3离 4震 5巽 6坎 7艮 8坤
+const GUA_NAMES = {
+  "1,1":"乾","1,2":"履","1,3":"同人","1,4":"无妄","1,5":"姤","1,6":"讼","1,7":"遁","1,8":"否",
+  "2,1":"夬","2,2":"兑","2,3":"革","2,4":"随","2,5":"大过","2,6":"困","2,7":"咸","2,8":"萃",
+  "3,1":"大有","3,2":"睽","3,3":"离","3,4":"噬嗑","3,5":"鼎","3,6":"未济","3,7":"旅","3,8":"晋",
+  "4,1":"大壮","4,2":"归妹","4,3":"丰","4,4":"震","4,5":"恒","4,6":"解","4,7":"小过","4,8":"豫",
+  "5,1":"小畜","5,2":"中孚","5,3":"家人","5,4":"益","5,5":"巽","5,6":"涣","5,7":"渐","5,8":"观",
+  "6,1":"需","6,2":"节","6,3":"既济","6,4":"屯","6,5":"井","6,6":"坎","6,7":"蹇","6,8":"比",
+  "7,1":"大畜","7,2":"损","7,3":"贲","7,4":"颐","7,5":"蛊","7,6":"蒙","7,7":"艮","7,8":"剥",
+  "8,1":"泰","8,2":"临","8,3":"明夷","8,4":"复","8,5":"升","8,6":"师","8,7":"谦","8,8":"坤"
+};
+
+// 八卦基本象意（用于分析）
+const TRIGRAM_INFO = {
+  1: { name:"乾", nature:"天", attr:"刚健", desc:"刚健进取、主动有力" },
+  2: { name:"兑", nature:"泽", attr:"喜悦", desc:"和悦沟通、言语喜庆" },
+  3: { name:"离", nature:"火", attr:"光明", desc:"光明依附、文明显现" },
+  4: { name:"震", nature:"雷", attr:"动", desc:"震动奋起、行动变化" },
+  5: { name:"巽", nature:"风", attr:"入", desc:"柔顺渗透、循序渐进" },
+  6: { name:"坎", nature:"水", attr:"险", desc:"险陷曲折、需谨慎应对" },
+  7: { name:"艮", nature:"山", attr:"止", desc:"静止守成、适可而止" },
+  8: { name:"坤", nature:"地", attr:"柔顺", desc:"柔顺承载、厚德包容" }
+};
+
+const YAO_NAMES = ['初','二','三','四','五','上'];
+
+function isYang(v) { return v === 7 || v === 9; }
+function isDong(v) { return v === 6 || v === 9; }
+
+function trigramIndex(lines) {
+  const bits = lines.map(v => isYang(v) ? 1 : 0);
+  const key = (bits[2] << 2) | (bits[1] << 1) | bits[0];
+  return {7:1,6:2,5:3,4:4,3:5,2:6,1:7,0:8}[key];
+}
+
+// ========== 大衍筮法核心 ==========
+function oneChange(pile) {
+  const left = 1 + Math.floor(Math.random() * (pile - 1));
+  const right = pile - left;
+  const guaYi = 1;
+  const rightAfter = right - 1;
+  const leftRem = left % 4 === 0 ? 4 : left % 4;
+  const rightRem = rightAfter % 4 === 0 ? 4 : rightAfter % 4;
+  const guaLe = guaYi + leftRem + rightRem;
+  return { pile, left, right, guaYi, leftRem, rightRem, guaLe, remain: pile - guaLe };
+}
+
+function oneYao(pile) {
+  const changes = [];
+  let cur = pile;
+  for (let i = 0; i < 3; i++) {
+    const c = oneChange(cur);
+    changes.push(c);
+    cur = c.remain;
+  }
+  const totalGuaLe = pile - cur;
+  const yaoValue = cur / 4;
+  return { changes, yaoValue, remain: cur };
+}
+
+// ========== 卦象分析 ==========
+function analyze(yaos, benName, bianName, dongYaos) {
+  const benLines = yaos.slice(0,3);
+  const shangLines = yaos.slice(3,6);
+  const benLower = trigramIndex(benLines);
+  const benUpper = trigramIndex(shangLines);
+
+  const bianYaos = yaos.map(v => isDong(v) ? (isYang(v) ? 8 : 7) : v);
+  const bianLower = trigramIndex(bianYaos.slice(0,3));
+  const bianUpper = trigramIndex(bianYaos.slice(3,6));
+
+  const lowerInfo = TRIGRAM_INFO[benLower];
+  const upperInfo = TRIGRAM_INFO[benUpper];
+  const bianLowerInfo = TRIGRAM_INFO[bianLower];
+  const bianUpperInfo = TRIGRAM_INFO[bianUpper];
+
+  let html = `<div class="analysis"><h3>卦象分析</h3>`;
+
+  // 1. 卦体结构
+  html += `<p><b>卦体结构：</b>本卦 <span class="tag">${benName}</span>，上卦为 <b>${upperInfo.name}</b>（${upperInfo.nature}，${upperInfo.attr}），下卦为 <b>${lowerInfo.name}</b>（${lowerInfo.nature}，${lowerInfo.attr}）。`
+       +  `整体意象为「${upperInfo.nature}在${lowerInfo.nature}之上」，${upperInfo.desc}，${lowerInfo.desc}。</p>`;
+
+  // 2. 动爻分析
+  if (dongYaos.length === 0) {
+    html += `<p><b>动爻状态：</b>六爻皆静，为<b>静卦</b>。静卦主“守常”，宜安于当下、按本卦所示稳步而行，不主动求变。占断以本卦卦辞为主。</p>`;
+  } else {
+    const dongPos = yaos.map((v,i) => isDong(v) ? i : -1).filter(i => i >= 0);
+    const posText = dongPos.map(i => YAO_NAMES[i] + '爻').join('、');
+    html += `<p><b>动爻状态：</b>共 <b>${dongYaos.length}</b> 个动爻，分别是 ${posText}。`;
+
+    if (dongYaos.length === 1) {
+      html += `独发之爻是全局枢纽，占断以该爻<b>爻辞</b>为主，本卦卦辞为辅。`;
+    } else if (dongYaos.length === 2) {
+      html += `两爻俱动，传统以<b>上动爻</b>（位高者）爻辞为主，下动爻为辅。`;
+    } else if (dongYaos.length === 3) {
+      html += `三爻动，主“变”，宜结合本卦与变卦<b>卦辞</b>对看，以本卦为现状、变卦为趋向。`;
+    } else if (dongYaos.length === 4) {
+      html += `四爻动，变数较多，占断以<b>变卦</b>为主，参看本卦中两个静爻的爻辞。`;
+    } else if (dongYaos.length === 5) {
+      html += `五爻动，仅一爻静，以<b>变卦</b>为主，静爻爻辞为辅，事态趋向明朗但变动剧烈。`;
+    } else {
+      html += `六爻皆动，属极变之象，以<b>变卦卦辞</b>为断，本卦仅作背景参考。`;
+    }
+    html += `</p>`;
+  }
+
+  // 3. 变卦分析
+  if (dongYaos.length > 0) {
+    html += `<p><b>变卦趋势：</b>由 <span class="tag">${benName}</span> 变为 <span class="tag">${bianName}</span>。`
+         +  `变卦上卦 <b>${bianUpperInfo.name}</b>（${bianUpperInfo.attr}），下卦 <b>${bianLowerInfo.name}</b>（${bianLowerInfo.attr}），`
+         +  `象征事态由「${upperInfo.nature}${lowerInfo.nature}」转向「${bianUpperInfo.nature}${bianLowerInfo.nature}」，`
+         +  `即${bianUpperInfo.desc}。可理解为：当前处境以本卦为体，未来走向以变卦为用。</p>`;
+  }
+
+  // 4. 综合提示
+  const yangCount = yaos.filter(isYang).length;
+  const yinCount = 6 - yangCount;
+  html += `<p><b>阴阳配比：</b>阳爻 <b>${yangCount}</b>、阴爻 <b>${yinCount}</b>。`;
+  if (yangCount > yinCount) {
+    html += `阳刚偏盛，主进取、主动，但需防刚愎过急。`;
+  } else if (yangCount < yinCount) {
+    html += `阴柔偏盛，主顺守、蓄势，宜待时而动、以柔克刚。`;
+  } else {
+    html += `阴阳各三，刚柔相济，处于相对平衡之局，宜守中道。`;
+  }
+  html += `</p>`;
+
+  html += `<p class="note">以上分析依据卦体结构、动爻数量与阴阳配比生成，属义理层面的辅助解读，具体占断仍需结合卦辞爻辞与实际情境。</p>`;
+  html += `</div>`;
+  return html;
+}
+
+function cast() {
+  const stepsEl = document.getElementById('steps');
+  const resultEl = document.getElementById('result');
+  stepsEl.innerHTML = '';
+  resultEl.style.display = 'none';
+
+  let pile = 49;
+  const yaos = [];
+  let html = '';
+
+  for (let y = 0; y < 6; y++) {
+    const r = oneYao(pile);
+    yaos.push(r.yaoValue);
+    pile = r.remain;
+
+    const yaoName = YAO_NAMES[y] + '爻';
+    const valName = {9:'老阳', 8:'少阴', 7:'少阳', 6:'老阴'}[r.yaoValue];
+    const dongMark = isDong(r.yaoValue) ? ' <span class="dong">（动爻）</span>' : '';
+
+    html += `<div class="step"><div class="title">第 ${y+1} 爻（${yaoName}）</div>`;
+    r.changes.forEach((c, i) => {
+      html += `第 ${i+1} 变：本策 <span class="num">${c.pile}</span> → 分二 左 <span class="num">${c.left}</span> / 右 <span class="num">${c.right}</span>，`
+           +  `挂一 <span class="num">${c.guaYi}</span>，左余 <span class="num">${c.leftRem}</span>，右余 <span class="num">${c.rightRem}</span>，`
+           +  `挂扐 <span class="num">${c.guaLe}</span>，余 <span class="num">${c.remain}</span><br>`;
+    });
+    html += `三变余策 <span class="num">${r.remain}</span> ÷ 4 = <span class="num">${r.yaoValue}</span> → <b>${valName}</b>${dongMark}</div>`;
+  }
+  stepsEl.innerHTML = html;
+
+  const benName = GUA_NAMES[trigramIndex(yaos.slice(3,6)) + ',' + trigramIndex(yaos.slice(0,3))];
+  const bianYaos = yaos.map(v => isDong(v) ? (isYang(v) ? 8 : 7) : v);
+  const bianName = GUA_NAMES[trigramIndex(bianYaos.slice(3,6)) + ',' + trigramIndex(bianYaos.slice(0,3))];
+
+  let guaHtml = '';
+  for (let i = 5; i >= 0; i--) {
+    const yang = isYang(yaos[i]);
+    const dong = isDong(yaos[i]);
+    guaHtml += `<div class="yao ${dong?'dong':''}">${yang ? '━━━━━━━━' : '━━━  ━━━'}${dong ? '  ← 动' : ''}</div>`;
+  }
+
+  const dongYaos = yaos.map((v,i) => isDong(v) ? YAO_NAMES[i]+'爻' : null).filter(Boolean);
+
+  resultEl.style.display = 'block';
+  resultEl.innerHTML = `
+    <h2>卦象结果</h2>
+    <div class="gua-line">${guaHtml}</div>
+    <p><b>本卦：</b>${benName}卦</p>
+    <p><b>动爻：</b>${dongYaos.length ? dongYaos.join('、') : '无（静卦）'}</p>
+    <p><b>变卦：</b>${dongYaos.length ? bianName + '卦' : '无变卦'}</p>
+    <p class="note">爻值（自下而上）：${yaos.join('、')}　｜　9老阳 8少阴 7少阳 6老阴</p>
+    ${analyze(yaos, benName, bianName, dongYaos)}
+  `;
+}
+
+document.getElementById('run').addEventListener('click', cast);
+</script>
+</body>
+</html>
